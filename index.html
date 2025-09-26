@@ -500,8 +500,10 @@
 
             <div class="permission-prompt hidden" id="permissionPrompt">
                 <p>
-                    we need access to your device sensors to make music with
-                    motion
+                    <strong>iOS Users:</strong> When prompted, tap "Allow" to enable motion sensors for music creation
+                </p>
+                <p style="margin-top: 10px; font-size: 0.9em;">
+                    This allows us to detect device tilt, shake, and rotation to create interactive music
                 </p>
             </div>
 
@@ -608,9 +610,13 @@
                     this.startBtn.classList.add("hidden");
                     this.stopBtn.classList.remove("hidden");
 
-                    await this.requestPermissions();
-                    this.startSensorListeners();
-                    this.updateStatus("making music!");
+                    const permissionGranted = await this.requestPermissions();
+                    if (permissionGranted) {
+                        this.startSensorListeners();
+                        this.updateStatus("making music!");
+                    } else {
+                        this.stop();
+                    }
                 }
 
                 stop() {
@@ -631,18 +637,51 @@
                             "function"
                     ) {
                         this.permissionPrompt.classList.remove("hidden");
+
+                        // Create a promise to handle permission response
+                        const permissionPromise = new Promise((resolve) => {
+                            // Set up orientation listener to detect permission grant
+                            const handleFirstOrientation = () => {
+                                window.removeEventListener("deviceorientation", handleFirstOrientation);
+                                resolve("granted");
+                            };
+
+                            window.addEventListener("deviceorientation", handleFirstOrientation);
+
+                            // Timeout if user doesn't respond
+                            setTimeout(() => {
+                                window.removeEventListener("deviceorientation", handleFirstOrientation);
+                                resolve("denied");
+                            }, 10000);
+                        });
+
+                        // Trigger permission dialog
                         try {
-                            const permission =
-                                await DeviceOrientationEvent.requestPermission();
-                            if (permission !== "granted") {
-                                throw new Error("Permission denied");
+                            const permission = await DeviceOrientationEvent.requestPermission();
+
+                            // If permission is granted immediately (iOS 16+)
+                            if (permission === "granted") {
+                                this.permissionPrompt.classList.add("hidden");
+                                return true;
                             }
+
+                            // If we get a prompt, wait for the result
+                            if (permission === null || permission === undefined) {
+                                const result = await permissionPromise;
+                                if (result === "granted") {
+                                    this.permissionPrompt.classList.add("hidden");
+                                    return true;
+                                }
+                            }
+
+                            throw new Error("Permission denied");
                         } catch (error) {
                             this.updateStatus("permission denied");
-                            return;
+                            this.permissionPrompt.classList.add("hidden");
+                            return false;
                         }
-                        this.permissionPrompt.classList.add("hidden");
                     }
+                    return true;
                 }
 
                 startSensorListeners() {
